@@ -1034,18 +1034,28 @@
             const addOpt = (val, text) => { const o = document.createElement('option'); o.value = val; o.textContent = text; sel.appendChild(o); };
             addOpt('camera', '特雷门琴（摄像）');
             addOpt('white_noise', '白噪声'); addOpt('ocean', '海浪环境音');
+            let jsonOk = false;
             try {
-                const res = await fetch(`assets/audio/?v=${Date.now()}`, { cache: 'no-store' });
-                const html = await res.text();
-                const doc = new DOMParser().parseFromString(html, 'text/html');
-                Array.from(doc.querySelectorAll('a')).forEach(a => {
-                    const href = a.getAttribute('href')||'';
-                    if(/\.(mp3|wav)$/i.test(href)) {
-                        const name = decodeURIComponent(href.replace(/^.*\//,''));
-                        addOpt('file:'+name, name);
-                    }
-                });
+                const res = await fetch(`assets/audio/index.json?v=${Date.now()}`, { cache: 'no-store' });
+                if(res.ok) {
+                    const list = await res.json();
+                    if(Array.isArray(list)) { list.forEach(name => addOpt('file:'+name, name)); jsonOk = true; }
+                }
             } catch(e) {}
+            if(!jsonOk) {
+                try {
+                    const res = await fetch(`assets/audio/?v=${Date.now()}`, { cache: 'no-store' });
+                    const html = await res.text();
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    Array.from(doc.querySelectorAll('a')).forEach(a => {
+                        const href = a.getAttribute('href')||'';
+                        if(/\.(mp3|wav)$/i.test(href)) {
+                            const name = decodeURIComponent(href.replace(/^.*\//,''));
+                            addOpt('file:'+name, name);
+                        }
+                    });
+                } catch(e) {}
+            }
             // 默认：不自动播放，仅设置选择项
             config.isPlaying = false;
             const fileBeautiful = Array.from(sel.options).find(opt => opt.value === 'file:beautiful dream.mp3');
