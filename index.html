@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 克拉尼全息模拟器 v9.4 (Hand Focus)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        html, body { width: 100%; height: 100%; }
+        body { margin: 0; overflow: hidden; background-color: #000000; color: white; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+        canvas { display: block; cursor: grab; }
+        /* 图案区域（主画布）占满视口 */
+        #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; transform: scale(1.1); transform-origin: center center; }
+        canvas:active { cursor: grabbing; }
+        
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: #00ffcc; }
+
+        .control-panel {
+            position: absolute; top: 10px; right: 10px; width: 320px;
+            background: rgba(8, 8, 12, 0.9); backdrop-filter: blur(20px);
+            border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 90vh; display: flex; flex-direction: column;
+            z-index: 50; overflow: hidden;
+        }
+        
+        .panel-header {
+            padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            background: linear-gradient(to right, rgba(255,255,255,0.02), transparent);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .panel-content { padding: 16px; overflow-y: auto; transition: max-height 0.3s ease; }
+        .panel-collapsed .panel-content { display: none; }
+        
+        .slider-group { margin-bottom: 14px; }
+        .slider-label { display: flex; justify-content: space-between; font-size: 0.7rem; color: #999; margin-bottom: 5px; font-weight: 600; letter-spacing: 0.5px; }
+        
+        input[type=range] { width: 100%; accent-color: #00ffcc; cursor: pointer; height: 2px; border-radius: 2px; background: #333; appearance: none; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px; background: #00ffcc; border-radius: 50%; cursor: pointer;
+            box-shadow: 0 0 10px rgba(0,255,204,0.5); margin-top: -5px; transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-runnable-track { height: 2px; background: #333; }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); background: #fff; }
+
+        .select-wrapper { position: relative; margin-bottom: 10px; }
+        select {
+            width: 100%; padding: 8px 10px; background: rgba(20, 20, 25, 0.6);
+            border: 1px solid #333; color: #ddd; border-radius: 6px;
+            font-size: 13px; appearance: none; cursor: pointer; outline: none; transition: border-color 0.2s;
+        }
+        /* 明确指定关键控件的字号，避免外部样式覆盖 */
+        #audioSourceSelect, #togglePlayBtn { font-size: 13px !important; }
+        select:hover { border-color: #00ffcc; }
+        .select-arrow { position: absolute; right: 10px; top: 11px; pointer-events: none; color: #666; font-size: 0.6rem; }
+
+        button {
+            width: 100%; padding: 10px; background: #00ffcc; /* primary cyan */
+            border: none; border-radius: 6px; color: #000000; font-weight: 700; letter-spacing: 1px;
+            cursor: pointer; transition: all 0.15s; font-size: 13px;
+            display: flex; justify-content: center; align-items: center; gap: 6px; text-transform: uppercase;
+        }
+        button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+        button:active { filter: brightness(0.95); transform: translateY(0); }
+        /* 保持同一主按钮色，不区分音频/视频识别 */
+        button.mic-active { background: #00ffcc; }
+        button.cam-active { background: #00ffcc; }
+
+        .vis-bar { flex: 1; background: #00ffcc; opacity: 0.8; border-radius: 2px 2px 0 0; transition: height 0.08s ease; }
+
+        #overlay {
+            position: fixed; inset: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.35);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: none; justify-content: center; align-items: center; flex-direction: column; z-index: 100;
+            transition: opacity 0.3s ease;
+        }
+        .overlay-play {
+            width: 80px; height: 80px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer;
+            background: transparent; box-shadow: none;
+        }
+        .overlay-play:hover { opacity: 0.9; }
+        .overlay-text { margin-top: 12px; font-size: 12px; color: #ddd; letter-spacing: 1px; }
+
+        .section-title { font-size: 0.65rem; font-weight: 800; color: #555; text-transform: uppercase; margin-top: 12px; margin-bottom: 8px; letter-spacing: 1px; border-left: 2px solid #00ffcc; padding-left: 6px; }
+        
+        .view-toggle { display: flex; background: rgba(0,0,0,0.4); border-radius: 6px; padding: 2px; margin-bottom: 12px; }
+        .view-btn { flex: 1; text-align: center; padding: 6px; font-size: 0.7rem; color: #666; cursor: pointer; border-radius: 4px; transition: all 0.2s; font-weight: 600; }
+        .view-btn.active { background: #222; color: #00ffcc; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        
+        #chromaticControls { border-left: 1px solid rgba(255,255,255,0.1); padding-left: 8px; margin-top: 8px; }
+        #cameraControls { border-left: 1px solid rgba(255,159,67,0.3); padding-left: 8px; margin-bottom: 10px; display: none; }
+        
+        /* 摄像头预览小窗 - 左上角 */
+        #camContainer {
+            position: absolute; top: 10px; left: 10px; width: 200px; height: 150px; 
+            border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; overflow: hidden; opacity: 0; transition: opacity 0.5s;
+            pointer-events: none; z-index: 40; background: #000;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        #camContainer.active { opacity: 0.9; }
+        /* 修复镜像问题：canvas 绘制时已经翻转了，这里就不再 CSS 翻转，否则负负得正 */
+        #camPreview { width: 100%; height: 100%; } 
+    </style>
+</head>
+<body>
+
+    <!-- 启动页已移除：直接进入页面，无需点击初始化 -->
+
+    <canvas id="canvas"></canvas>
+    <!-- 启动蒙层：播放引导 -->
+    <div id="overlay">
+        <div id="overlayPlay" class="overlay-play">
+            <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" aria-hidden="true" style="color:#ffffff">
+                <path fill="currentColor" d="M21.409 9.353a2.998 2.998 0 0 1 0 5.294L8.597 21.614C6.534 22.737 4 21.277 4 18.968V5.033c0-2.31 2.534-3.769 4.597-2.648z"/>
+            </svg>
+        </div>
+        <div class="overlay-text">点击开始体验</div>
+    </div>
+    
+    <!-- 摄像头预览 -->
+    <div id="camContainer">
+        <canvas id="camPreview"></canvas>
+        <!-- 这里的网格和高亮将直接绘制在 camPreview 上 -->
+    </div>
+    
+    <video id="webcamVideo" playsinline style="display:none;"></video>
+
+    <div class="control-panel" id="mainPanel">
+        <div class="panel-header" onclick="togglePanel()">
+            <div class="flex items-center">
+                <div id="statusDot" class="w-2 h-2 rounded-full bg-red-500 mr-2 shadow-[0_0_8px_red]"></div>
+                <h2 class="text-xs font-bold text-gray-200 tracking-widest">控制面板</h2>
+            </div>
+            <span id="collapseIcon" class="text-gray-500 text-[10px] transform transition-transform">▼</span>
+        </div>
+
+        <div class="panel-content">
+            <!-- 视图 -->
+            <div class="view-toggle">
+                <div class="view-btn active" id="view2D" onclick="setViewMode('2d')">二维平面</div>
+                <div class="view-btn" id="view3D" onclick="setViewMode('3d')">三维全息</div>
+            </div>
+
+            <!-- 音频源 -->
+            <div class="section-title">音频输入</div>
+            <div class="select-wrapper">
+                <select id="audioSourceSelect"></select>
+                <div class="select-arrow">▼</div>
+            </div>
+            
+            <!-- 摄像头控制区 -->
+            <div id="cameraControls" style="display:none;">
+                <div class="text-[9px] text-orange-400 mb-2 leading-relaxed">
+                    <p>● <strong>手势追踪</strong></p>
+                    <p>中心/头部区域将被屏蔽。</p>
+                    <p>在两侧区域移动双手以演奏。</p>
+                </div>
+                <div class="select-wrapper">
+                    <label class="text-[9px] text-gray-500 uppercase block mb-1">追踪模式</label>
+                    <select id="camMappingMode" style="font-size:13px">
+                        <option value="grid">五声音阶网格</option>
+                        <option value="motion" selected>连续光流</option>
+                        <option value="spatial">空间 Y 轴</option>
+                        <option value="color">色彩均衡</option>
+                    </select>
+                    <div class="select-arrow" style="top: 22px;">▼</div>
+                </div>
+                
+                <!-- 动作阈值控制 -->
+                <div class="slider-group mb-2">
+                    <div class="slider-label">
+                        <span>动作阈值（抗噪）</span>
+                        <span id="motionThreshVal" class="text-orange-400">30</span>
+                    </div>
+                    <input type="range" id="motionThresh" min="10" max="100" step="5" value="30">
+                </div>
+                
+                <!-- 屏蔽中心选项已移除，默认保持当前行为 -->
+            </div>
+
+            <button id="togglePlayBtn">
+                <span id="playIcon">▶</span> <span id="playText">播放音频</span>
+            </button>
+            
+            
+            <!-- 响应参数 -->
+            <div class="mt-3 bg-gray-900/50 p-2 rounded border border-gray-800">
+                <label class="flex items-center cursor-pointer justify-between mb-2">
+                    <span class="text-[10px] text-cyan-400 font-bold tracking-wide">音频联动</span>
+                    <div class="relative">
+                        <input type="checkbox" id="audioSyncToggle" class="sr-only">
+                        <div class="w-7 h-3.5 bg-gray-700 rounded-full transition hover:bg-gray-600"></div>
+                        <div class="dot absolute w-2 h-2 bg-white rounded-full shadow left-0.5 top-0.5 transition-transform"></div>
+                    </div>
+                </label>
+                
+                <div id="sensitivityControls" class="opacity-40 pointer-events-none transition-opacity">
+                    <div class="grid grid-cols-2 gap-2">
+                         <div class="slider-group mb-0">
+                            <div class="slider-label"><span>低频灵敏度</span><span id="sensLowVal" class="text-cyan-400">0.2</span></div>
+                            <input type="range" id="sensLow" min="0.1" max="5.0" step="0.1" value="0.2">
+                        </div>
+                        <div class="slider-group mb-0">
+                            <div class="slider-label"><span>高频灵敏度</span><span id="sensHighVal" class="text-purple-400">0.5</span></div>
+                            <input type="range" id="sensHigh" min="0.1" max="5.0" step="0.1" value="0.5">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 可视化反馈 -->
+            <div id="audioFeedback" class="hidden mt-3 transition-opacity duration-300 opacity-0">
+                <div class="flex items-end h-8 gap-1 p-1 bg-black/20 rounded">
+                    <div class="vis-bar" id="v1"></div><div class="vis-bar" id="v2"></div>
+                    <div class="vis-bar" id="v3"></div><div class="vis-bar" id="v4"></div>
+                    <div class="vis-bar" id="v5"></div><div class="vis-bar" id="v6"></div>
+                    <div class="vis-bar" id="v7"></div><div class="vis-bar" id="v8"></div>
+                </div>
+                
+            </div>
+
+            <!-- 光效参数 -->
+            <div class="section-title mt-4">光学与配色</div>
+            <div class="select-wrapper">
+                <select id="colorModeSelect" style="font-size:13px">
+                    <option value="chromatic" selected>光学色散</option>
+                    <option value="heatmap">热力图</option>
+                    <option value="cyberpunk">赛博朋克</option>
+                    <option value="fire">烈焰</option>
+                    <option value="rainbow">彩虹</option>
+                    <option value="monochrome">单色</option>
+                </select>
+                <div class="select-arrow">▼</div>
+            </div>
+
+            <!-- 色散专用控制区 -->
+            <div id="chromaticControls" class="mb-4">
+                <div class="select-wrapper">
+                    <select id="dispersionTypeSelect" style="font-size:13px">
+                        <option value="radial">径向透镜</option>
+                        <option value="wave">波纹棱镜</option>
+                    </select>
+                    <div class="select-arrow">▼</div>
+                </div>
+                <div class="slider-group mb-0">
+                    <div class="slider-label">
+                        <span>色散强度</span>
+                        <span id="dispersionVal" class="text-cyan-400">1.0</span>
+                    </div>
+                    <input type="range" id="dispersionStr" min="0" max="5.0" step="0.1" value="1.0">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-2">
+                <div class="slider-group mb-0">
+                    <div class="slider-label"><span>粒子尺寸</span></div>
+                    <input type="range" id="pSize" min="0.5" max="3.0" step="0.1" value="1.2">
+                </div>
+                <div class="slider-group mb-0">
+                    <div class="slider-label"><span>轨迹衰减</span></div>
+                    <input type="range" id="trailLen" min="0.01" max="0.4" step="0.01" value="0.08">
+                </div>
+            </div>
+
+            <div class="slider-group">
+                <div class="slider-label"><span>色相偏移</span></div>
+                <input type="range" id="hueSlider" min="0" max="360" step="1" value="180">
+            </div>
+
+            <!-- 物理参数 -->
+            <div class="section-title">物理引擎</div>
+            <div class="slider-group">
+                <div class="slider-label">
+                    <span>粒子数</span><span id="pCountDisplay">40000</span>
+                </div>
+                <input type="range" id="pCount" min="5000" max="100000" step="5000" value="40000">
+            </div>
+            
+            <div class="slider-group">
+                <div class="slider-label"><span>对称混合</span><span id="blendVal" class="text-yellow-400">-1.0</span></div>
+                <input type="range" id="blendSlider" min="-1.5" max="1.5" step="0.01" value="-1.0">
+            </div>
+
+            <div id="manualControls" class="opacity-100 transition-opacity">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="slider-group">
+                        <div class="slider-label"><span>参数 N</span></div>
+                        <input type="range" id="paramN" min="1" max="20" step="0.01" value="5">
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-label"><span>参数 M</span></div>
+                        <input type="range" id="paramM" min="1" max="20" step="0.01" value="3">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const config = {
+            count: 40000,
+            baseSpeed: 2.0, currSpeed: 2.0,
+            n: 5, m: 3, blend: -1.0,
+            smoothN: 5, smoothM: 3, smoothBlend: -1.0,
+            audioSync: true, isPlaying: false, sourceType: 'piano',
+            camMappingMode: 'motion', 
+            motionThreshold: 30,
+            maskCenter: true,
+            colorMode: 'chromatic', 
+            dispersionType: 'radial', 
+            dispersionStr: 1.0,
+            baseHue: 180, particleSize: 1.2, trailOpacity: 0.08,
+            sensLow: 0.2, sensHigh: 0.5,
+            viewMode: '2d', rotX: 60, rotY: 0, rotSpeed: 0.2
+        };
+
+        let rotationX = config.rotX * Math.PI / 180;
+        let rotationY = config.rotY * Math.PI / 180;
+        let autoRotate = true;
+
+        function calculateAmplitude(x, y, n, m, blend) {
+            const PI = Math.PI;
+            return Math.cos(n * PI * x) * Math.cos(m * PI * y) + blend * Math.cos(m * PI * x) * Math.cos(n * PI * y);
+        }
+
+        function calculateGradient(x, y, n, m, blend) {
+            const PI = Math.PI;
+            const dAdx = -n*PI * Math.sin(n*PI*x) * Math.cos(m*PI*y) 
+                         - blend * m*PI * Math.sin(m*PI*x) * Math.cos(n*PI*y);
+            const dAdy = -m*PI * Math.cos(n*PI*x) * Math.sin(m*PI*y)
+                         - blend * n*PI * Math.cos(m*PI*x) * Math.sin(n*PI*y);
+            const len = Math.sqrt(dAdx*dAdx + dAdy*dAdy);
+            if (len < 0.001) return [0, 0];
+            return [dAdx / len, dAdy / len];
+        }
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        let canvasWidth, canvasHeight, centerX, centerY, minDimension;
+        let particles = []; 
+
+        function resize() {
+            canvasWidth = window.innerWidth;
+            canvasHeight = window.innerHeight;
+            canvas.width = canvasWidth; canvas.height = canvasHeight;
+            centerX = canvasWidth/2; centerY = canvasHeight/2;
+            minDimension = Math.min(canvasWidth, canvasHeight);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function initParticles(num) {
+            particles = new Float32Array(num * 6);
+            for(let i=0; i<num; i++) {
+                particles[i*6] = Math.random()*2 - 1;
+                particles[i*6+1] = Math.random()*2 - 1;
+                particles[i*6+4] = 0; 
+                particles[i*6+5] = Math.random(); 
+            }
+        }
+
+        let isDragging = false;
+        let lastMouseX = 0, lastMouseY = 0;
+        canvas.addEventListener('mousedown', e => { isDragging=true; lastMouseX=e.clientX; lastMouseY=e.clientY; autoRotate=false; });
+        window.addEventListener('mouseup', () => isDragging=false);
+        window.addEventListener('mousemove', e => {
+            if(!isDragging || config.viewMode !== '3d') return;
+            rotationY += (e.clientX - lastMouseX) * 0.005;
+            rotationX += (e.clientY - lastMouseY) * 0.005; 
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+        });
+        canvas.addEventListener('touchstart', e => { isDragging=true; lastMouseX=e.touches[0].clientX; lastMouseY=e.touches[0].clientY; autoRotate=false; });
+        canvas.addEventListener('touchmove', e => {
+            if(!isDragging || config.viewMode !== '3d') return;
+            rotationY += (e.touches[0].clientX - lastMouseX) * 0.005;
+            rotationX += (e.touches[0].clientY - lastMouseY) * 0.005;
+            lastMouseX = e.touches[0].clientX; lastMouseY = e.touches[0].clientY;
+            e.preventDefault();
+        }, {passive:false});
+
+        function update() {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = `rgba(0, 0, 0, ${config.trailOpacity})`; 
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+            config.smoothN += (config.n - config.smoothN) * 0.1;
+            config.smoothM += (config.m - config.smoothM) * 0.1;
+            config.smoothBlend += (config.blend - config.smoothBlend) * 0.05;
+
+            if (config.viewMode === '3d' && autoRotate) rotationY += 0.002;
+
+            const tN = config.smoothN, tM = config.smoothM, tB = config.smoothBlend;
+            const speed = config.currSpeed;
+            const size = config.particleSize;
+            
+            ctx.globalCompositeOperation = 'lighter'; 
+            
+            const baseHue = config.baseHue;
+            const batches = 3; 
+            const fov = 600; const viewDist = 4;
+            const cosX = Math.cos(rotationX), sinX = Math.sin(rotationX);
+            const cosY = Math.cos(rotationY), sinY = Math.sin(rotationY);
+
+            for(let layer=0; layer<batches; layer++) {
+                ctx.beginPath();
+                let offsetScale = 1.0; 
+                let offsetVectorScale = 0; 
+
+                if (config.colorMode === 'chromatic') {
+                    const str = config.dispersionStr * 0.02; 
+                    if (config.dispersionType === 'radial') {
+                        if(layer===0) { ctx.fillStyle = `rgba(255, 30, 30, 0.6)`; offsetScale = 1.0 - str; }
+                        if(layer===1) { ctx.fillStyle = `rgba(30, 255, 30, 0.6)`; offsetScale = 1.0; }
+                        if(layer===2) { ctx.fillStyle = `rgba(30, 80, 255, 0.6)`; offsetScale = 1.0 + str; }
+                    } else {
+                        if(layer===0) { ctx.fillStyle = `rgba(255, 30, 30, 0.6)`; offsetVectorScale = -str * 1.5; }
+                        if(layer===1) { ctx.fillStyle = `rgba(30, 255, 30, 0.6)`; offsetVectorScale = 0; }
+                        if(layer===2) { ctx.fillStyle = `rgba(30, 80, 255, 0.6)`; offsetVectorScale = str * 1.5; }
+                    }
+                } else if (config.colorMode === 'heatmap') {
+                    if(layer===0) ctx.fillStyle = `hsla(${baseHue}, 80%, 40%, 0.3)`; 
+                    if(layer===1) ctx.fillStyle = `hsla(${(baseHue+40)%360}, 90%, 60%, 0.4)`;
+                    if(layer===2) ctx.fillStyle = `hsla(${(baseHue+90)%360}, 100%, 80%, 0.6)`;
+                } else if (config.colorMode === 'cyberpunk') {
+                    if(layer===0) ctx.fillStyle = `hsla(180, 100%, 30%, 0.3)`; 
+                    if(layer===1) ctx.fillStyle = `hsla(300, 100%, 50%, 0.4)`; 
+                    if(layer===2) ctx.fillStyle = `hsla(60, 100%, 70%, 0.7)`;  
+                } else if (config.colorMode === 'fire') {
+                    if(layer===0) ctx.fillStyle = `hsla(0, 0%, 20%, 0.3)`;   
+                    if(layer===1) ctx.fillStyle = `hsla(10, 90%, 40%, 0.4)`; 
+                    if(layer===2) ctx.fillStyle = `hsla(40, 100%, 60%, 0.6)`; 
+                } else {
+                    if(layer===0) ctx.fillStyle = `hsla(${baseHue}, 70%, 50%, 0.3)`;
+                    if(layer===1) ctx.fillStyle = `rgba(0,0,0,0)`;
+                    if(layer===2) ctx.fillStyle = `rgba(0,0,0,0)`;
+                }
+
+                for (let i = 0; i < config.count; i++) {
+                    if (layer === 0) {
+                        let px = particles[i*6];
+                        let py = particles[i*6+1];
+                        const amp = calculateAmplitude(px, py, tN, tM, tB);
+                        const absAmp = Math.abs(amp);
+                        const force = Math.pow(absAmp, 0.8) * 0.015 * speed;
+                        px += (Math.random()-0.5) * force;
+                        py += (Math.random()-0.5) * force;
+                        if (px > 1) px -= 2; else if (px < -1) px += 2;
+                        if (py > 1) py -= 2; else if (py < -1) py += 2;
+                        particles[i*6] = px;
+                        particles[i*6+1] = py;
+                        particles[i*6+4] = absAmp; 
+                    }
+                    
+                    const amp = particles[i*6+4];
+                    let shouldDraw = false;
+                    
+                    if (config.colorMode === 'chromatic') {
+                        shouldDraw = true;
+                    } else if (config.colorMode === 'rainbow') {
+                        if (i % 3 === layer) {
+                            shouldDraw = true;
+                            const hueOffset = layer * 120;
+                            ctx.fillStyle = `hsla(${(baseHue + hueOffset)%360}, 80%, 60%, 0.4)`;
+                        }
+                    } else {
+                        if (layer === 0 && amp < 0.3) shouldDraw = true;
+                        if (layer === 1 && amp >= 0.3 && amp < 0.6) shouldDraw = true;
+                        if (layer === 2 && amp >= 0.6) shouldDraw = true;
+                    }
+
+                    if (shouldDraw) {
+                        const rawPx = particles[i*6];
+                        const rawPy = particles[i*6+1];
+                        let finalPx = rawPx;
+                        let finalPy = rawPy;
+
+                        if (config.colorMode === 'chromatic') {
+                            if (config.dispersionType === 'radial') {
+                                finalPx *= offsetScale;
+                                finalPy *= offsetScale;
+                            } else if (config.dispersionType === 'wave' && Math.abs(offsetVectorScale) > 0.0001) {
+                                const [gdx, gdy] = calculateGradient(rawPx, rawPy, tN, tM, tB);
+                                finalPx += gdx * offsetVectorScale;
+                                finalPy += gdy * offsetVectorScale;
+                            }
+                        }
+
+                        let sx, sy, pScale = size;
+                        if (config.viewMode === '3d') {
+                            let pz = amp * 0.8;
+                            let x1 = finalPx * cosY - pz * sinY;
+                            let z1 = pz * cosY + finalPx * sinY;
+                            let y2 = finalPy * cosX - z1 * sinX;
+                            let z2 = z1 * cosX + finalPy * sinX;
+                            let zDepth = viewDist - z2;
+                            if (zDepth < 0.1) zDepth = 0.1;
+                            let scale = fov / zDepth;
+                            let baseScale = minDimension * 0.4;
+                            sx = x1 * scale * (baseScale/200) + centerX;
+                            sy = y2 * scale * (baseScale/200) + centerY;
+                            pScale = size * (scale / 150); 
+                        } else {
+                            let scale = Math.max(canvasWidth, canvasHeight) / 2 * 0.9;
+                            sx = finalPx * scale + centerX;
+                            sy = finalPy * scale + centerY;
+                        }
+                        ctx.moveTo(sx, sy);
+                        ctx.rect(sx, sy, pScale, pScale);
+                    }
+                }
+                ctx.fill();
+            }
+            
+            if(config.isPlaying && config.sourceType === 'camera') {
+                processCameraFrame();
+            }
+            
+            requestAnimationFrame(update);
+        }
+
+        let actx, analyzer, dataArr, nodes=[], micStream, camStream;
+        let masterOutGain = null;
+        let oscBank = [], motionOsc = null;
+        let prevFrameData = null;
+        let anaCanvas = null, anaCtx = null; // 分析用低分辨率画布，提高预览清晰度
+        let activeGridNotes = new Set(); 
+        let lastTriggerTime = new Array(15).fill(0); 
+        
+        async function initAudio() {
+            if(!actx) {
+                actx = new (window.AudioContext||window.webkitAudioContext)();
+                analyzer = actx.createAnalyser();
+                analyzer.fftSize = 2048; analyzer.smoothingTimeConstant = 0.6;
+                dataArr = new Uint8Array(analyzer.frequencyBinCount);
+                masterOutGain = actx.createGain();
+                masterOutGain.gain.value = 1.0;
+            }
+            if(actx.state!=='running') { try { await actx.resume(); } catch(e){} }
+            if(masterOutGain){
+                try {
+                    masterOutGain.connect(analyzer);
+                } catch(e) {}
+                try {
+                    masterOutGain.connect(actx.destination);
+                } catch(e) {}
+            }
+        }
+
+        
+        function stopAudio() {
+            nodes.forEach(n => { try{n.stop();n.disconnect()}catch(e){} }); nodes=[];
+            oscBank.forEach(o => { try{o.osc.stop();o.osc.disconnect(); o.gain.disconnect()}catch(e){} }); oscBank=[];
+            if(motionOsc) { try{motionOsc.osc.stop(); motionOsc.mod.stop();}catch(e){}; motionOsc=null; }
+            
+            activeGridNotes.clear();
+            lastTriggerTime.fill(0);
+            
+            if(micStream) { micStream.disconnect(); micStream=null; }
+            if(camStream) { 
+                camStream.getTracks().forEach(t=>t.stop()); 
+                document.getElementById('webcamVideo').srcObject = null;
+                camStream = null;
+            }
+            document.getElementById('camContainer').classList.remove('active');
+        }
+        
+        function analyze() {
+            if(!config.isPlaying) return;
+            analyzer.getByteFrequencyData(dataArr);
+            if(config.audioSync) {
+                const getE = (s,e) => { let sum=0; for(let i=s;i<e;i++) sum+=dataArr[i]; return sum/(e-s)/255; };
+                const bass = getE(2, 10), lowMid = getE(10, 50), treble = getE(150, 600);
+                const kickForce = lowMid * config.sensLow; 
+                const targetBlend = -1.0 + kickForce * 1.2;
+                const targetN = 3 + bass * config.sensLow * 15; 
+                const targetM = 2 + treble * config.sensHigh * 25;
+                const targetSpeed = config.baseSpeed + (bass + lowMid + treble) * 4.0;
+
+                const att = 0.2, rel = 0.05;
+                config.n += (targetN - config.n) * (targetN>config.n ? att : rel);
+                config.m += (targetM - config.m) * (targetM>config.m ? att : rel);
+                config.blend += (targetBlend - config.blend) * 0.1;
+                config.currSpeed += (targetSpeed - config.currSpeed) * 0.1;
+
+                if(kickForce > 0.6 && config.colorMode === 'monochrome') config.baseHue = (config.baseHue + 5) % 360;
+
+                const elN = document.getElementById('audioN'); if(elN) elN.innerText = config.n.toFixed(1);
+                const elM = document.getElementById('audioM'); if(elM) elM.innerText = config.m.toFixed(1);
+                const elBlendS = document.getElementById('blendSlider'); if(elBlendS) elBlendS.value = config.blend;
+                const elBlendV = document.getElementById('blendVal'); if(elBlendV) elBlendV.innerText = config.blend.toFixed(2);
+                
+                updateVis();
+            } else {
+                config.currSpeed += (config.baseSpeed - config.currSpeed) * 0.1;
+            }
+            requestAnimationFrame(analyze);
+        }
+        function updateVis() {
+            const bars = document.querySelectorAll('.vis-bar');
+            if(bars.length > 0) {
+                for(let i=0; i<8; i++) bars[i].style.height = (dataArr[i * 10]/255*100)+'%';
+            }
+        }
+        
+        // --- Camera Sonification ---
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({video: {width: {ideal: 1280}, height: {ideal: 720}}}) 
+            .then(stream => {
+                camStream = stream;
+                const video = document.getElementById('webcamVideo');
+                video.srcObject = stream;
+                video.play();
+                document.getElementById('camContainer').classList.add('active');
+                
+                if(config.camMappingMode === 'motion') initMotionSynth();
+                else if(config.camMappingMode === 'grid') initGridSynth();
+                else initSpectrogramSynth(); 
+                
+                updateBtn(true, false, true);
+                document.getElementById('cameraControls').style.display = 'block';
+            })
+            .catch(err => {
+                console.error(err);
+                alert('摄像头访问失败 / Camera Access Denied');
+                config.sourceType = 'piano'; 
+                const sel = document.getElementById('audioSourceSelect'); if(sel) sel.value = 'piano';
+                playPiano();
+            });
+        }
+
+        function initMotionSynth() {
+            const osc = actx.createOscillator();
+            const mod = actx.createOscillator();
+            const modGain = actx.createGain();
+            const mainGain = actx.createGain();
+            osc.type = 'sine'; mod.type = 'triangle';
+            mod.connect(modGain); modGain.connect(osc.frequency);
+            osc.connect(mainGain); mainGain.connect(analyzer);
+            const masterVol = actx.createGain(); masterVol.gain.value = 0.2; 
+            mainGain.connect(masterVol); masterVol.connect(masterOutGain);
+            osc.start(); mod.start(); mainGain.gain.value = 0; 
+            motionOsc = { osc, mod, modGain, gain: mainGain };
+        }
+
+        function initGridSynth() {
+            lastTriggerTime.fill(0);
+            activeGridNotes.clear();
+        }
+
+        function initSpectrogramSynth() {
+            for(let i=0; i<16; i++) {
+                const osc = actx.createOscillator();
+                const gain = actx.createGain();
+                const freq = 50 * Math.pow(80, i/15);
+                osc.frequency.value = freq;
+                osc.type = i < 4 ? 'sawtooth' : 'sine';
+                gain.gain.value = 0;
+                osc.connect(gain); gain.connect(analyzer); 
+                const masterVol = actx.createGain(); masterVol.gain.value = 0.02; 
+                gain.connect(masterVol); masterVol.connect(masterOutGain);
+                osc.start(); oscBank.push({osc, gain});
+            }
+        }
+        
+        function triggerGridNote(index) {
+            const now = actx.currentTime;
+            if(now - lastTriggerTime[index] < 0.2) return;
+            lastTriggerTime[index] = now;
+
+            const scale = [0, 2, 4, 7, 9]; 
+            const rootFreqs = [130.81, 261.63, 523.25]; 
+            
+            const col = index % 5;
+            const row = Math.floor(index / 5);
+            const octaveIdx = 2 - row; 
+            
+            const baseFreq = rootFreqs[octaveIdx];
+            const semitone = scale[col];
+            const freq = baseFreq * Math.pow(2, semitone/12);
+            
+            const osc = actx.createOscillator();
+            const gain = actx.createGain();
+            
+            osc.type = octaveIdx === 0 ? 'triangle' : 'sine';
+            osc.frequency.value = freq;
+            
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.3, now + 0.05); 
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8); 
+            
+            osc.connect(gain);
+            gain.connect(analyzer);
+            gain.connect(masterOutGain);
+            
+            osc.start();
+            osc.stop(now + 1.0); 
+        }
+
+        function processCameraFrame() {
+            if(!camStream) return;
+            const video = document.getElementById('webcamVideo');
+            const previewCanvas = document.getElementById('camPreview');
+            const pCtx = previewCanvas.getContext('2d', {willReadFrequently: true});
+            const container = document.getElementById('camContainer');
+            
+            const anaW = 80, anaH = 60; // 分析分辨率（低）
+            const vW = video.videoWidth || 640;
+            const vH = video.videoHeight || 480;
+            const cw = container.clientWidth || 200;
+            const ch = container.clientHeight || 150;
+            
+            // 预览画布使用容器尺寸，避免变形
+            if(previewCanvas.width !== cw) previewCanvas.width = cw;
+            if(previewCanvas.height !== ch) previewCanvas.height = ch;
+            
+            // 计算等比缩放并居中（镜像）
+            const scale = Math.min(cw / vW, ch / vH);
+            const scaledW = Math.max(1, Math.floor(vW * scale));
+            const scaledH = Math.max(1, Math.floor(vH * scale));
+            const dx = Math.floor((cw - scaledW) / 2);
+            const dy = Math.floor((ch - scaledH) / 2);
+            
+            pCtx.clearRect(0, 0, cw, ch);
+            // 使用变换实现镜像，居中绘制
+            pCtx.save();
+            pCtx.translate(cw, 0);
+            pCtx.scale(-1, 1);
+            pCtx.drawImage(video, dx, dy, scaledW, scaledH);
+            pCtx.restore();
+            
+            // 分析使用离屏小画布
+            if(!anaCanvas) {
+                anaCanvas = document.createElement('canvas');
+                anaCanvas.width = anaW; anaCanvas.height = anaH;
+                anaCtx = anaCanvas.getContext('2d', {willReadFrequently: true});
+            }
+            anaCtx.save();
+            anaCtx.scale(-1, 1);
+            anaCtx.drawImage(video, -anaW, 0, anaW, anaH);
+            anaCtx.restore();
+            
+            const frame = anaCtx.getImageData(0, 0, anaW, anaH);
+            const data = frame.data;
+
+            if (!prevFrameData) {
+                prevFrameData = new Uint8Array(data.length);
+                prevFrameData.set(data);
+                return;
+            }
+
+            // === Grid Mode ===
+            if (config.camMappingMode === 'grid') {
+                const cellW = anaW / 5;
+                const cellH = anaH / 3;
+                const motionThreshold = config.motionThreshold || 30; 
+                const activeThreshold = 5; 
+                
+                let currentActive = new Array(15).fill(0);
+
+                for(let i=0; i<data.length; i+=4) {
+                    const lum = (data[i]+data[i+1]+data[i+2])/3;
+                    const prevLum = (prevFrameData[i]+prevFrameData[i+1]+prevFrameData[i+2])/3;
+                    if (Math.abs(lum - prevLum) > motionThreshold) {
+                        const pIdx = i/4;
+                        const x = pIdx % anaW;
+                        const y = Math.floor(pIdx / anaW);
+                        
+                        // Center Masking
+                        const col = Math.floor(x / cellW);
+                        const row = Math.floor(y / cellH);
+                        
+                        let ignore = false;
+                        if(config.maskCenter) {
+                            // Mask top center (head)
+                            if(row === 0 && (col >= 1 && col <= 3)) ignore = true;
+                            // Mask middle center
+                            if(row === 1 && (col === 2)) ignore = true;
+                        }
+                        
+                        if(!ignore) {
+                            const cellIdx = row * 5 + col;
+                            if(cellIdx >= 0 && cellIdx < 15) currentActive[cellIdx]++;
+                        }
+                    }
+                    prevFrameData[i] = data[i]; prevFrameData[i+1] = data[i+1]; prevFrameData[i+2] = data[i+2];
+                }
+
+                for(let i=0; i<15; i++) {
+                    if (currentActive[i] > activeThreshold) {
+                        triggerGridNote(i);
+                    }
+                }
+                
+            // 用预览等比缩放区域画网格
+            const cellWPrev = scaledW / 5;
+            const cellHPrev = scaledH / 3;
+            pCtx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+            pCtx.lineWidth = 1;
+            for(let c=1; c<5; c++) { pCtx.beginPath(); pCtx.moveTo(dx + c*cellWPrev, dy); pCtx.lineTo(dx + c*cellWPrev, dy + scaledH); pCtx.stroke(); }
+            for(let r=1; r<3; r++) { pCtx.beginPath(); pCtx.moveTo(dx, dy + r*cellHPrev); pCtx.lineTo(dx + scaledW, dy + r*cellHPrev); pCtx.stroke(); }
+                
+                // Draw Safe Zone overlay
+                if(config.maskCenter) {
+                    pCtx.fillStyle = 'rgba(255, 50, 50, 0.15)';
+                    // Top center block
+                    pCtx.fillRect(dx + 1*cellWPrev, dy + 0, 3*cellWPrev, cellHPrev); 
+                    // Middle center
+                    pCtx.fillRect(dx + 2*cellWPrev, dy + cellHPrev, cellWPrev, cellHPrev);
+                }
+
+                const now = actx.currentTime;
+                for(let i=0; i<15; i++) {
+                    const timeSince = now - lastTriggerTime[i];
+                    if(timeSince < 0.5) {
+                        const alpha = 1.0 - (timeSince / 0.5);
+                        const col = i % 5; const row = Math.floor(i / 5);
+                        pCtx.fillStyle = `rgba(0, 255, 204, ${alpha * 0.6})`;
+                        pCtx.fillRect(dx + col*cellWPrev, dy + row*cellHPrev, cellWPrev, cellHPrev);
+                    }
+                }
+
+            } else if (config.camMappingMode === 'motion') {
+                let sumX = 0, sumY = 0, totalDiff = 0;
+                const motionThreshold = config.motionThreshold || 30;
+                
+                for(let i=0; i<data.length; i+=4) {
+                    const lum = (data[i]+data[i+1]+data[i+2])/3;
+                    const prevLum = (prevFrameData[i]+prevFrameData[i+1]+prevFrameData[i+2])/3;
+                    const diff = Math.abs(lum - prevLum);
+                    if (diff > motionThreshold) {
+                        const pIdx = i/4;
+                        sumX += (pIdx % anaW) * diff;
+                        sumY += Math.floor(pIdx / anaW) * diff;
+                        totalDiff += diff;
+                    }
+                    prevFrameData[i] = data[i]; prevFrameData[i+1] = data[i+1]; prevFrameData[i+2] = data[i+2];
+                }
+                
+                if (totalDiff > 1000 && motionOsc) {
+                    const avgX = sumX / totalDiff; const avgY = sumY / totalDiff;
+                    const normX = avgX / anaW;
+                    const baseFreq = 110 + normX * 600;
+                    const quantFreq = Math.round(baseFreq / 55) * 55; 
+                    const normY = 1.0 - (avgY / anaH);
+                    
+                    motionOsc.osc.frequency.setTargetAtTime(quantFreq, actx.currentTime, 0.1);
+                    motionOsc.mod.frequency.value = quantFreq * 2;
+                    motionOsc.modGain.gain.setTargetAtTime(normY * 500, actx.currentTime, 0.1);
+                    motionOsc.gain.gain.cancelScheduledValues(actx.currentTime);
+                    motionOsc.gain.gain.setValueAtTime(motionOsc.gain.gain.value, actx.currentTime);
+                    motionOsc.gain.gain.linearRampToValueAtTime(Math.min(1.0, totalDiff/50000), actx.currentTime + 0.05);
+                    document.getElementById('camContainer').style.border = "1px solid #00ffcc";
+                } else if (motionOsc) {
+                    motionOsc.gain.gain.setTargetAtTime(0, actx.currentTime, 0.2);
+                    document.getElementById('camContainer').style.border = "1px solid #333";
+                }
+            } else if (config.camMappingMode === 'spatial') {
+                // Spatial Mode (Y-Axis)
+                for(let y=0; y<16; y++) {
+                    let totalDiff = 0;
+                    const startRow = y * 3;
+                    for(let r=0; r<3; r++) {
+                        const rowIdx = startRow + r;
+                        for(let x=0; x<anaW; x++) {
+                            const i = (rowIdx * anaW + x) * 4;
+                            const lum = (data[i]+data[i+1]+data[i+2])/3;
+                            const prevLum = (prevFrameData[i]+prevFrameData[i+1]+prevFrameData[i+2])/3;
+                            totalDiff += Math.abs(lum - prevLum);
+                            prevFrameData[i] = data[i]; prevFrameData[i+1] = data[i+1]; prevFrameData[i+2] = data[i+2];
+                        }
+                    }
+                    const avgDiff = totalDiff / (anaW * 3) / 255; 
+                    const oscIndex = 15 - y; // Top = High
+                    if(oscBank[oscIndex]) {
+                        const target = avgDiff * 10; // Boost gain
+                        const current = oscBank[oscIndex].gain.gain.value;
+                        oscBank[oscIndex].gain.gain.value = current + (target - current) * 0.2;
+                    }
+                }
+            } else if (config.camMappingMode === 'color') {
+                // Color Mode
+                let totalR=0, totalG=0, totalB=0;
+                const pCount = anaW * anaH;
+                for(let i=0; i<data.length; i+=4) {
+                    totalR += data[i]; totalG += data[i+1]; totalB += data[i+2];
+                    prevFrameData[i] = data[i]; prevFrameData[i+1] = data[i+1]; prevFrameData[i+2] = data[i+2];
+                }
+                const avgR = totalR/pCount/255; const avgG = totalG/pCount/255; const avgB = totalB/pCount/255;
+                
+                for(let i=0; i<16; i++) {
+                    let target = 0;
+                    if(i < 5) target = avgR; else if(i < 11) target = avgG; else target = avgB;
+                    target = target * target * (0.8 + Math.random()*0.4); // Flicker
+                    if(oscBank[i]) {
+                        const current = oscBank[i].gain.gain.value;
+                        oscBank[i].gain.gain.value = current + (target - current) * 0.2;
+                    }
+                }
+            }
+        }
+
+        // --- Standard Synths ---
+        function playSynth() {
+            const ctx = actx, dest = analyzer; let step = 0; const notes = [55, 110, 138.59, 164.81, 220, 277.18, 329.63, 440];
+            const mixGain = ctx.createGain();
+            mixGain.gain.value = 0.25; // 主混音音量
+            mixGain.connect(masterOutGain);
+            function tick() {
+                const t = ctx.currentTime;
+                if(step%4===0) { 
+                    const o=ctx.createOscillator(), g=ctx.createGain();
+                    o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(40, t+0.2);
+                    g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.01, t+0.4);
+                    o.connect(g); g.connect(dest); g.connect(mixGain); o.start(t); o.stop(t+0.4); nodes.push(o);
+                }
+                if(step%4===2 || Math.random()>0.8) { 
+                    const b=ctx.createBuffer(1,4096,ctx.sampleRate), d=b.getChannelData(0); for(let i=0;i<4096;i++) d[i]=Math.random()*2-1;
+                    const s=ctx.createBufferSource(), f=ctx.createBiquadFilter(), g=ctx.createGain();
+                    s.buffer=b; f.type='highpass'; f.frequency.value=6000;
+                    g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.01, t+0.1);
+                    s.connect(f); f.connect(g); g.connect(dest); g.connect(mixGain); s.start(t); nodes.push(s);
+                }
+                if(Math.random()>0.3) { 
+                    const o=ctx.createOscillator(), g=ctx.createGain(); o.type = Math.random()>0.5?'sawtooth':'square';
+                    const freq = notes[Math.floor(Math.random()*notes.length)]; o.frequency.value = freq;
+                    const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.setValueAtTime(freq, t); f.frequency.exponentialRampToValueAtTime(freq*4, t+0.1);
+                    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.3, t+0.05); g.gain.exponentialRampToValueAtTime(0.01, t+0.3);
+                    o.connect(f); f.connect(g); g.connect(dest); g.connect(mixGain); o.start(t); o.stop(t+0.4); nodes.push(o);
+                }
+                step++; const timer = setTimeout(tick, 125); nodes.push({stop: ()=>clearTimeout(timer), disconnect: ()=>{}});
+            }
+            tick();
+        }
+        const AUDIO_BASE = 'assets/audio';
+        const loadSample = async (file) => {
+            try {
+                const url = `${AUDIO_BASE}/${encodeURIComponent(file)}?v=${Date.now()}`;
+                const res = await fetch(url, { cache: 'no-store' });
+                if(!res.ok) return null;
+                const buf = await res.arrayBuffer();
+                return await actx.decodeAudioData(buf);
+            } catch(e) { return null; }
+        };
+        const playTrack = async (file, gainValue=0.8) => {
+            const buffer = await loadSample(file);
+            if(!buffer) { alert(`无法加载音频: ${file}`); return; }
+            const src = actx.createBufferSource(); src.buffer = buffer; src.loop = true;
+            const g = actx.createGain(); g.gain.value = gainValue;
+            src.connect(g); g.connect(analyzer); g.connect(masterOutGain);
+            src.start(); nodes.push(src);
+        };
+        function playPiano() { return playTrack('钢琴.mp3', 0.9); }
+        function playViolin(){ return playTrack('小提琴.mp3', 0.8); }
+        function playBass(){ return playTrack('chill bro.mp3', 0.85); }
+        function playNoise(type) {
+            const ctx = actx, bSize = ctx.sampleRate * 2, b = ctx.createBuffer(1, bSize, ctx.sampleRate), d = b.getChannelData(0);
+            if(type==='white') { for(let i=0; i<bSize; i++) d[i]=Math.random()*2-1; } 
+            else { let b0=0,b1=0; for(let i=0; i<bSize; i++) { let w = Math.random()*2-1; b0 = 0.99*b0 + 0.05*w; b1 = 0.98*b1 + 0.05*w; d[i]=(b0+b1+w)*0.1; } }
+            const s = ctx.createBufferSource(); s.buffer=b; s.loop=true; const f = ctx.createBiquadFilter(); 
+            if(type==='ocean') { f.type='lowpass'; f.frequency.value=400; const lfo = ctx.createOscillator(); lfo.frequency.value=0.2; const lg = ctx.createGain(); lg.gain.value=300; lfo.connect(lg); lg.connect(f.frequency); lfo.start(); nodes.push(lfo); } 
+            else { f.type='bandpass'; f.frequency.value=1000; }
+            const g = ctx.createGain(); g.gain.value=type==='ocean'?1.5:0.5; s.connect(f); f.connect(g); g.connect(analyzer);
+            const outGain = ctx.createGain(); outGain.gain.value = type==='ocean'?0.8:0.4; g.connect(outGain); outGain.connect(masterOutGain);
+            s.start(); nodes.push(s);
+        }
+        function startMic() {
+            navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{ micStream = actx.createMediaStreamSource(s); micStream.connect(analyzer); updateBtn(true, true); }).catch(e=>alert('麦克风访问失败'));
+        }
+        
+        
+        // 统一启动所选音源
+    async function startSource(type) {
+      await initAudio();
+      config.sourceType = type;
+      if(type==='white_noise') playNoise('white');
+      else if(type==='ocean') playNoise('ocean');
+      else if(type==='camera') startCamera();
+      else if(type.startsWith('file:')) { const name = type.slice(5); playTrack(name, 0.85); }
+      updateBtn(true);
+      analyze();
+    }
+        
+        async function togglePlay() {
+            await initAudio();
+            if(config.isPlaying) { 
+                config.isPlaying = false; stopAudio(); updateBtn(false); 
+                document.getElementById('cameraControls').style.display = 'none';
+            } else {
+                config.isPlaying = true; const type = document.getElementById('audioSourceSelect').value;
+                await startSource(type);
+            }
+        }
+        
+        function updateBtn(playing, isMic, isCam) {
+            const b = document.getElementById('togglePlayBtn'), icon = document.getElementById('playIcon'), text = document.getElementById('playText');
+            b.classList.remove('mic-active', 'cam-active');
+            if(playing) { 
+                if(isMic) { b.classList.add('mic-active'); b.style.color = '#000'; icon.innerText = '🎤'; text.innerText = '麦克风监听'; }
+                else if(isCam) { b.classList.add('cam-active'); b.style.color = '#000'; icon.innerText = '👁'; text.innerText = '摄像可视化'; }
+                else { b.style.background = '#00ffcc'; b.style.color = '#000'; icon.innerText = '⏸'; text.innerText = '暂停音频'; }
+            } 
+            else { b.style.background = '#00ffcc'; b.style.color = '#000'; icon.innerText = '▶'; text.innerText = '播放音频'; }
+        }
+        
+        function togglePanel() {
+            const p = document.getElementById('mainPanel'), icon = document.getElementById('collapseIcon');
+            p.classList.toggle('panel-collapsed');
+            if(p.classList.contains('panel-collapsed')) { icon.style.transform = 'rotate(-90deg)'; p.style.width = '200px'; } else { icon.style.transform = 'rotate(0deg)'; p.style.width = '320px'; }
+        }
+        function setViewMode(mode) {
+            config.viewMode = mode;
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(mode === '2d' ? 'view2D' : 'view3D').classList.add('active');
+            autoRotate = true; 
+        }
+        // 页面加载后直接初始化：移除启动页逻辑
+        document.addEventListener('DOMContentLoaded', async () => {
+            initParticles(config.count);
+            initAudio();
+            update();
+            const audioToggle = document.getElementById('audioSyncToggle');
+            if (audioToggle) { audioToggle.checked = true; audioToggle.dispatchEvent(new Event('change')); }
+            const sl = document.getElementById('sensLowVal'); if (sl) sl.innerText = config.sensLow.toFixed(1);
+            const sh = document.getElementById('sensHighVal'); if (sh) sh.innerText = config.sensHigh.toFixed(1);
+            // 构建动态音频列表：camera + white_noise + ocean + 本地文件
+            const sel = document.getElementById('audioSourceSelect');
+            const addOpt = (val, text) => { const o = document.createElement('option'); o.value = val; o.textContent = text; sel.appendChild(o); };
+            addOpt('camera', '特雷门琴（摄像）');
+            addOpt('white_noise', '白噪声'); addOpt('ocean', '海浪环境音');
+            try {
+                const res = await fetch(`assets/audio/?v=${Date.now()}`, { cache: 'no-store' });
+                const html = await res.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                Array.from(doc.querySelectorAll('a')).forEach(a => {
+                    const href = a.getAttribute('href')||'';
+                    if(/\.(mp3|wav)$/i.test(href)) {
+                        const name = decodeURIComponent(href.replace(/^.*\//,''));
+                        addOpt('file:'+name, name);
+                    }
+                });
+            } catch(e) {}
+            // 默认：不自动播放，仅设置选择项
+            config.isPlaying = false;
+            const fileBeautiful = Array.from(sel.options).find(opt => opt.value === 'file:beautiful dream.mp3');
+            const firstFile = Array.from(sel.options).find(opt => opt.value.startsWith('file:'));
+            if(fileBeautiful) { sel.value = fileBeautiful.value; }
+            else if(firstFile) { sel.value = firstFile.value; }
+            else { sel.value = 'white_noise'; }
+            updateBtn(false);
+            // 显示播放引导蒙层
+            const ov = document.getElementById('overlay');
+            const playOverlay = document.getElementById('overlayPlay');
+            if(ov && playOverlay) {
+                ov.style.display = 'flex'; ov.style.opacity = '1';
+                playOverlay.addEventListener('click', async () => {
+                    await togglePlay(); ov.style.opacity = '0'; setTimeout(()=>{ ov.style.display='none'; }, 250);
+                });
+            }
+            // 绑定频率滑块
+            // 已移除“指定频率”控制
+        });
+        document.getElementById('togglePlayBtn').addEventListener('click', async () => { await togglePlay(); });
+        
+        document.getElementById('audioSyncToggle').addEventListener('change', e=>{
+            config.audioSync = e.target.checked; 
+            const dot = e.target.parentNode.querySelector('.dot');
+            const ctrls = document.getElementById('sensitivityControls');
+            const manual = document.getElementById('manualControls');
+            const feedback = document.getElementById('audioFeedback');
+            
+            if(config.audioSync) { 
+                dot.style.transition = 'left 0.2s ease';
+                dot.style.left = 'calc(100% - 0.625rem)';
+                dot.style.backgroundColor='#00ffcc'; 
+                if(ctrls) { ctrls.style.opacity=1; ctrls.style.pointerEvents='auto'; }
+                if(manual) { manual.style.opacity=0.3; manual.style.pointerEvents='none'; }
+                if(feedback) { feedback.classList.remove('hidden'); setTimeout(()=>feedback.style.opacity=1,10); }
+                if(config.isPlaying) analyze(); 
+            } else { 
+                dot.style.left = '0.125rem';
+                dot.style.backgroundColor='white'; 
+                if(ctrls) { ctrls.style.opacity=0.4; ctrls.style.pointerEvents='none'; }
+                if(manual) { manual.style.opacity=1; manual.style.pointerEvents='auto'; }
+                if(feedback) { feedback.style.opacity=0; setTimeout(()=>feedback.classList.add('hidden'),300); }
+            }
+        });
+        
+        const bind = (id, key, isInt=false) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', e => { 
+                config[key] = isInt ? parseInt(e.target.value) : parseFloat(e.target.value); 
+                if(key==='count') { initParticles(config[key]); const d=document.getElementById('pCountDisplay'); if(d) d.innerText = config[key]; }
+                if(key==='blend') { const d=document.getElementById('blendVal'); if(d) d.innerText = config[key].toFixed(2); }
+                if(key==='dispersionStr') { const d=document.getElementById('dispersionVal'); if(d) d.innerText = config[key].toFixed(1); }
+                if(key==='motionThreshold') { const d=document.getElementById('motionThreshVal'); if(d) d.innerText = config[key]; }
+                if(key==='sensLow') { const d=document.getElementById('sensLowVal'); if(d) d.innerText = config[key].toFixed(1); }
+                if(key==='sensHigh') { const d=document.getElementById('sensHighVal'); if(d) d.innerText = config[key].toFixed(1); }
+            });
+        };
+
+        bind('pCount', 'count', true); bind('pSize', 'particleSize'); bind('trailLen', 'trailOpacity'); bind('blendSlider', 'blend'); bind('paramN', 'n'); bind('paramM', 'm'); bind('sensLow', 'sensLow'); bind('sensHigh', 'sensHigh'); bind('hueSlider', 'baseHue', true); bind('dispersionStr', 'dispersionStr'); bind('motionThresh', 'motionThreshold', true);
+        
+        document.getElementById('colorModeSelect').addEventListener('change', e=>{
+            config.colorMode=e.target.value;
+            const chromaticCtrl = document.getElementById('chromaticControls');
+            if (chromaticCtrl) chromaticCtrl.style.display = e.target.value === 'chromatic' ? 'block' : 'none';
+        });
+        document.getElementById('dispersionTypeSelect').addEventListener('change', e=>config.dispersionType=e.target.value);
+        
+        document.getElementById('camMappingMode').addEventListener('change', e => {
+            config.camMappingMode = e.target.value;
+            // Reset audio engine for new mode
+            if(config.isPlaying && config.sourceType === 'camera') {
+                stopAudio();
+                startCamera(); // Restart with new synth
+            }
+        });
+        
+        // 屏蔽中心选项已移除，无需事件绑定
+        
+        document.getElementById('audioSourceSelect').addEventListener('change', async e => {
+            const type = e.target.value;
+            if (config.isPlaying) { stopAudio(); await startSource(type); }
+            // 未播放时，仅更新选择，不自动播放
+        });
+    </script>
+</body>
+</html>
+        /* 保证控制面板内所有下拉入口字号为 13px */
+        .control-panel select, .control-panel select option { font-size: 13px !important; }
+        #colorModeSelect, #dispersionTypeSelect, #camMappingMode, #audioSourceSelect { font-size: 13px !important; }
