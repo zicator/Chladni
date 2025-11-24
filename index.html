@@ -77,8 +77,8 @@
             background: rgba(0,0,0,0.35);
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
-            display: none; justify-content: center; align-items: center; flex-direction: column; z-index: 100;
-            transition: opacity 0.3s ease;
+            display: flex; justify-content: center; align-items: center; flex-direction: column; z-index: 100;
+            opacity: 1; transition: opacity 0.3s ease; will-change: opacity, backdrop-filter;
         }
         .overlay-play {
             width: 80px; height: 80px;
@@ -121,7 +121,7 @@
                 <path fill="currentColor" d="M21.409 9.353a2.998 2.998 0 0 1 0 5.294L8.597 21.614C6.534 22.737 4 21.277 4 18.968V5.033c0-2.31 2.534-3.769 4.597-2.648z"/>
             </svg>
         </div>
-        <div class="overlay-text">点击开始体验</div>
+        <div class="overlay-text">点击开始播放音乐</div>
     </div>
     
     <!-- 摄像头预览 -->
@@ -1058,7 +1058,6 @@
             const ov = document.getElementById('overlay');
             const playOverlay = document.getElementById('overlayPlay');
             if(ov && playOverlay) {
-                ov.style.display = 'flex'; ov.style.opacity = '1';
                 playOverlay.addEventListener('click', async () => {
                     await togglePlay(); ov.style.opacity = '0'; setTimeout(()=>{ ov.style.display='none'; }, 250);
                 });
